@@ -115,7 +115,7 @@ class Lattice:
             y = int(fields[5])
             self.matrix[x][y] = cell
             if cell not in self.data_dict.keys():
-                self.data_dict[cell] = {'pixels': [], 'vertices': set()}
+                self.data_dict[cell] = {'pixels': [], 'vertices': set(), 'boundary': []}
             self.data_dict[cell]['pixels'].append((x, y))
 
         self.dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
@@ -128,16 +128,6 @@ class Lattice:
         except:
             return pt
 
-    def shift_func_gen(self, shift_dir):
-        def func(pt):
-            shifted = (pt[0] + shift_dir[0], pt[1] + shift_dir[1])
-            try:
-                self.matrix[shifted]
-                return shifted
-            except:
-                return pt
-        return func
-
     def adjacent_cells(self, pixel, cell):
         adj_cells = []
 
@@ -148,7 +138,7 @@ class Lattice:
 
         return adj_cells
 
-    def get_vertices(self, neighbour_order=1):
+    def get_vertices(self, neighbour_order=2, neighbour_dist=3):
         vertices = []
 
         # First pass
@@ -160,18 +150,18 @@ class Lattice:
                     self.data_dict[cell]['vertices'].add(adj_pixels[adj_vertices.index(True)])
                 else:
                     adj_cells = self.adjacent_cells(pixel, cell)
+                    if len(adj_cells) >= 1:
+                        self.data_dict[cell]['boundary'].append(pixel)
                     if len(adj_cells) >= 2:
                         vertices.append(pixel)
                         self.data_dict[cell]['vertices'].add(pixel)
 
         # Second pass
         for cell in self.data_dict.keys():
-            for pixel in self.data_dict[cell]['pixels']:
-                if pixel not in vertices:
-                    adj_pixels = [self.shift(pixel, shift_dir) for shift_dir in dirs(neighbour_order)]
-                    adj_vertices = [shifted_pixel in vertices for shifted_pixel in adj_pixels]
-                    if any(adj_vertices):
-                        self.data_dict[cell]['vertices'].add(adj_pixels[adj_vertices.index(True)])
+            for pixel in self.data_dict[cell]['boundary']:
+                for vertex in vertices:
+                    if pixel != vertex and dist(pixel, vertex) <= neighbour_dist:
+                        self.data_dict[cell]['vertices'].add(vertex)
 
     def polygonize_cells(self):
         lines = []
