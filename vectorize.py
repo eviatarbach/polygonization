@@ -47,18 +47,19 @@ def arc_through_points(p1, p2, circle_centre, centroid):
         return (theta2, theta1)
 
 def polygonize(pts):
-    '''Naive traveling salesman. Improve if necessary.'''
-    min_dist = float('inf')
-    for path in itertools.permutations(pts):
-        path_dist = sum([dist(pt1, pt2) for pt1, pt2 in zip(path[:-1], path[1:])]) + dist(path[0], path[-1])
-        if path_dist < min_dist:
-            min_dist = path_dist
-            min_path = path
-    return (min_path, min_dist)
+    '''
+    Form a polygon from the given points by connecting them in order of angle
+    from the centroid, and return the order of points as well as the polygon's
+    perimeter.
 
-def polygonize2(pts):
+    This should be equivalent to the convex hull when the set of points is
+    convex, and is probably the shortest path connecting the points in many
+    cases (i.e., the solution to the traveling salesman problem).
+    '''
     centre = centroid(pts)
-    return (sorted(pts, key=lambda pt: angle(pt, centre)), 0)
+    polygon = sorted(pts, key=lambda pt: angle(pt, centre))
+    perimeter = sum([dist(p1, p2) for p1, p2 in zip(polygon[:-1], polygon[1:])])
+    return (polygon, perimeter)
 
 def circles_through_points(p1, p2, r):
     '''Based on http://rosettacode.org/wiki/Circles_of_given_radius_through_two_points#Python'''
@@ -86,6 +87,8 @@ def get_circle(p1, p2, pixels):
     while True:
         radius = math.sqrt(area/math.pi)
         if dist(p1, p2) > 2*radius:
+            # The distance between the two points can't be larger than the
+            # diameter of the desired circle
             area += step_size
             continue
         circle1, circle2 = circles_through_points(p1, p2, radius)
@@ -175,7 +178,7 @@ class Lattice:
         for cell in self.data_dict.keys():
             vertices = self.data_dict[cell]['vertices']
             boundary_vertices = list(filter(lambda vertex: 0 in self.adjacent_cells(vertex, cell), vertices))
-            polygon = polygonize2(vertices)[0]
+            polygon = polygonize(vertices)[0]
             lines.extend(zip(polygon[:-1], polygon[1:]))
             lines.append((polygon[-1], polygon[0]))
             if len(boundary_vertices) == 2:
