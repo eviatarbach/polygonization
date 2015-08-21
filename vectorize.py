@@ -139,18 +139,17 @@ class Lattice:
         except:
             return pt
 
-    def adjacent_cells(self, pixel, cell, neighbour_order=1, include_self=False):
+    def adjacent_cells(self, pixel, cell, neighbour_order=1):
         adj_cells = []
 
         for shift_dir in dirs(neighbour_order):
             adj_cell = self.matrix[self.shift(pixel, shift_dir)]
-            if (adj_cell not in adj_cells) and ((adj_cell != cell) if not include_self else True):
+            if (adj_cell not in adj_cells):
                 adj_cells.append(adj_cell)
 
-        if include_self:
-            adj_cells.append(self.matrix[pixel])
+        adj_cells.append(self.matrix[pixel])
 
-        return sorted(set(adj_cells))
+        return adj_cells
 
     def get_vertices(self, neighbour_dist=2):
         neighbour_count = numpy.zeros((self.height, self.width), dtype=int)
@@ -177,7 +176,7 @@ class Lattice:
         for vertex in vertices:
             repeated = False
             cell = self.matrix[vertex]
-            adj_cells = self.adjacent_cells(vertex, cell, 1, include_self=True)
+            adj_cells = self.adjacent_cells(vertex, cell, 1)
 
             for other_vertex in used_vertices:
                 if (dist(vertex, other_vertex) <= neighbour_dist):
