@@ -101,6 +101,17 @@ def get_circle(p1, p2, pixels):
         else:
             return (circle1 if circle1_pixels > circle2_pixels else circle2, radius)
 
+def shift_matrix(matrix, shift_dir):
+    if shift_dir == 'l':
+        matrix = numpy.hstack([matrix[:, 1:], numpy.zeros([matrix.shape[0], 1])])
+    elif shift_dir == 'r':
+        matrix = numpy.hstack([numpy.zeros([matrix.shape[0], 1]), matrix[:, :-1]])
+    elif shift_dir == 'u':
+        matrix = numpy.vstack([matrix[1:, :], numpy.zeros([1, matrix.shape[1]])])
+    elif shift_dir == 'd':
+        matrix = numpy.vstack([numpy.zeros([1, matrix.shape[1]]), matrix[:-1, :]])
+    return matrix
+
 class Lattice:
     def __init__(self, data_file, size):
         self.data_dict = dict()
@@ -128,40 +139,58 @@ class Lattice:
         except:
             return pt
 
-    def adjacent_cells(self, pixel, cell):
+    def adjacent_cells(self, pixel, cell, neighbour_order=1, include_self=False):
         adj_cells = []
 
-        for shift_dir in self.dirs:
+        for shift_dir in dirs(neighbour_order):
             adj_cell = self.matrix[self.shift(pixel, shift_dir)]
-            if (adj_cell not in adj_cells) and (adj_cell != cell):
+            if (adj_cell not in adj_cells) and ((adj_cell != cell) if not include_self else True):
                 adj_cells.append(adj_cell)
 
-        return adj_cells
+        if include_self:
+            adj_cells.append(self.matrix[pixel])
 
-    def get_vertices(self, neighbour_order=2, neighbour_dist=3):
-        vertices = []
+        return sorted(set(adj_cells))
 
-        # First pass
-        for cell in self.data_dict.keys():
-            for pixel in self.data_dict[cell]['pixels']:
-                adj_pixels = [self.shift(pixel, shift_dir) for shift_dir in dirs(neighbour_order)]
-                adj_vertices = [shifted_pixel in vertices for shifted_pixel in adj_pixels]
-                if any(adj_vertices):
-                    self.data_dict[cell]['vertices'].add(adj_pixels[adj_vertices.index(True)])
-                else:
-                    adj_cells = self.adjacent_cells(pixel, cell)
-                    if len(adj_cells) >= 1:
-                        self.data_dict[cell]['boundary'].append(pixel)
-                    if len(adj_cells) >= 2:
-                        vertices.append(pixel)
-                        self.data_dict[cell]['vertices'].add(pixel)
+    def get_vertices(self, neighbour_dist=2):
+        neighbour_count = numpy.zeros((self.height, self.width), dtype=int)
 
-        # Second pass
-        for cell in self.data_dict.keys():
-            for pixel in self.data_dict[cell]['boundary']:
-                for vertex in vertices:
-                    if pixel != vertex and dist(pixel, vertex) <= neighbour_dist:
+        for cell in [0] + list(self.data_dict.keys()):
+            # The following matrix records how many neighbouring lattice sites
+            # belong to the cell `cell`, for each lattice site
+            interfaces = ((shift_matrix(self.matrix, 'u') == cell).astype(int) +
+                          (shift_matrix(self.matrix, 'd') == cell).astype(int) +
+                          (shift_matrix(self.matrix, 'l') == cell).astype(int) +
+                          (shift_matrix(self.matrix, 'r') == cell).astype(int))
+
+            # If the cell is the same one as that which a lattice site belongs
+            # to, do not record it as a distinct neighbour
+            interfaces -= 4*(self.matrix == cell).astype(int)
+
+            # If any of the neighbouring lattice sites belongs to the cell,
+            # add 1 to the neighbour count of that lattice site
+            neighbour_count += (interfaces > 0).astype(int)
+
+        vertices = list(map(tuple, numpy.transpose((neighbour_count == 2).astype(int).nonzero())))
+        used_vertices = []
+
+        for vertex in vertices:
+            repeated = False
+            cell = self.matrix[vertex]
+            adj_cells = self.adjacent_cells(vertex, cell, 1, include_self=True)
+
+            for other_vertex in used_vertices:
+                if (dist(vertex, other_vertex) <= neighbour_dist):
+                    repeated = True
+                    break
+            if repeated:
+                continue
+            else:
+                for cell in adj_cells:
+                    try:
                         self.data_dict[cell]['vertices'].add(vertex)
+                    except: pass
+                used_vertices.append(vertex)
 
     def polygonize_cells(self):
         lines = []
