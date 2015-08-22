@@ -4,6 +4,7 @@ import math
 import numpy
 from matplotlib import pyplot as plt
 from matplotlib.patches import Arc
+import scipy.ndimage
 
 def dist(a, b):
     return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
@@ -89,8 +90,8 @@ def get_circle(p1, p2, pixels):
         if dist(p1, p2) > 2*radius:
             # The distance between the two points can't be larger than the
             # diameter of the desired circle
-            area += step_size
-            continue
+            area = math.pi*(dist(p1, p2)/2.)**2
+            radius = dist(p1, p2)/2.
         circle1, circle2 = circles_through_points(p1, p2, radius)
         circle1_pixels = list(map(lambda px: in_circle(px, circle1, radius), pixels)).count(True)
         circle2_pixels = list(map(lambda px: in_circle(px, circle2, radius), pixels)).count(True)
@@ -126,7 +127,7 @@ class Lattice:
             y = int(fields[5])
             self.matrix[x][y] = cell
             if cell not in self.data_dict.keys():
-                self.data_dict[cell] = {'pixels': [], 'vertices': set(), 'boundary': []}
+                self.data_dict[cell] = {'pixels': [], 'vertices': set(), 'boundary_vertices': []}
             self.data_dict[cell]['pixels'].append((x, y))
 
         self.dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
@@ -137,19 +138,17 @@ class Lattice:
             self.matrix[shifted]
             return shifted
         except:
-            return pt
+            return None
 
-    def adjacent_cells(self, pixel, cell, neighbour_order=1):
+    def adjacent_cells(self, pixel, neighbour_order=1):
         adj_cells = []
 
         for shift_dir in dirs(neighbour_order):
             adj_cell = self.matrix[self.shift(pixel, shift_dir)]
-            if (adj_cell not in adj_cells):
+            if (adj_cell != None) and (adj_cell not in adj_cells):
                 adj_cells.append(adj_cell)
 
-        adj_cells.append(self.matrix[pixel])
-
-        return adj_cells
+        return list(set(adj_cells))
 
     def get_vertices(self, neighbour_dist=2):
         neighbour_count = numpy.zeros((self.height, self.width), dtype=int)
@@ -176,7 +175,7 @@ class Lattice:
         for vertex in vertices:
             repeated = False
             cell = self.matrix[vertex]
-            adj_cells = self.adjacent_cells(vertex, cell, 1)
+            adj_cells = self.adjacent_cells(vertex, 1)
 
             for other_vertex in used_vertices:
                 if (dist(vertex, other_vertex) <= neighbour_dist):
@@ -185,17 +184,20 @@ class Lattice:
             if repeated:
                 continue
             else:
-                for cell in adj_cells:
-                    try:
-                        self.data_dict[cell]['vertices'].add(vertex)
-                    except: pass
+                boundary = 0 in adj_cells
+                if boundary:
+                    adj_cells.remove(0)
+                for adj_cell in adj_cells:
+                    self.data_dict[adj_cell]['vertices'].add(vertex)
+                    if boundary:
+                        self.data_dict[adj_cell]['boundary_vertices'].append(vertex)
                 used_vertices.append(vertex)
 
     def polygonize_cells(self):
         lines = []
         for cell in self.data_dict.keys():
             vertices = self.data_dict[cell]['vertices']
-            boundary_vertices = list(filter(lambda vertex: 0 in self.adjacent_cells(vertex, cell), vertices))
+            boundary_vertices = self.data_dict[cell]['boundary_vertices']
             polygon = polygonize(vertices)[0]
             lines.extend(zip(polygon[:-1], polygon[1:]))
             lines.append((polygon[-1], polygon[0]))
