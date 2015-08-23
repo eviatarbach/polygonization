@@ -150,7 +150,7 @@ class Lattice:
 
         return list(set(adj_cells))
 
-    def get_vertices(self, neighbour_dist=2):
+    def get_vertices(self):
         neighbour_count = numpy.zeros((self.height, self.width), dtype=int)
 
         for cell in [0] + list(self.data_dict.keys()):
@@ -169,29 +169,21 @@ class Lattice:
             # add 1 to the neighbour count of that lattice site
             neighbour_count += (interfaces > 0).astype(int)
 
-        vertices = list(map(tuple, numpy.transpose((neighbour_count == 2).astype(int).nonzero())))
-        used_vertices = []
+        vertex_regions, num_vertices = scipy.ndimage.label((neighbour_count == 2).astype(int))
+
+        vertices = scipy.ndimage.measurements.center_of_mass(neighbour_count, vertex_regions, range(num_vertices + 1))
 
         for vertex in vertices:
-            repeated = False
             cell = self.matrix[vertex]
             adj_cells = self.adjacent_cells(vertex, 1)
 
-            for other_vertex in used_vertices:
-                if (dist(vertex, other_vertex) <= neighbour_dist):
-                    repeated = True
-                    break
-            if repeated:
-                continue
-            else:
-                boundary = 0 in adj_cells
+            boundary = 0 in adj_cells
+            if boundary:
+                adj_cells.remove(0)
+            for adj_cell in adj_cells:
+                self.data_dict[adj_cell]['vertices'].add(vertex)
                 if boundary:
-                    adj_cells.remove(0)
-                for adj_cell in adj_cells:
-                    self.data_dict[adj_cell]['vertices'].add(vertex)
-                    if boundary:
-                        self.data_dict[adj_cell]['boundary_vertices'].append(vertex)
-                used_vertices.append(vertex)
+                    self.data_dict[adj_cell]['boundary_vertices'].append(vertex)
 
     def polygonize_cells(self):
         lines = []
