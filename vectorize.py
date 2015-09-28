@@ -1,16 +1,27 @@
 import itertools
 import math
+import argparse
+import os
 
 import numpy
 from matplotlib import pyplot as plt
 from matplotlib.patches import Arc
 import scipy.ndimage
 
+c = 2.3263  # -norminv(0.01)
+
 def dist(a, b):
     return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
 
 def in_circle(pt, circle_centre, r):
     return dist(pt, circle_centre) <= r
+
+def count_pixels_in_circle(pixels, circle_centre, r):
+    count = 0
+    for px in pixels:
+        if dist(px, circle_centre) <= r:
+            count += 1
+    return count
 
 def dirs(neighbour_order):
     dirs_list = list(itertools.product(range(-neighbour_order, neighbour_order + 1), range(-neighbour_order, neighbour_order + 1)))
@@ -19,6 +30,10 @@ def dirs(neighbour_order):
 
 def angle(pt, circle_centre):
     return (math.atan2(pt[1] - circle_centre[1], pt[0] - circle_centre[0])*180/math.pi) % 360
+
+def line_angle(line):
+    vec = (line[0][0] - line[1][0], line[0][1] - line[1][1])
+    return math.acos(vec[0]/dist(vec, (0, 0)))
 
 def centroid(pts):
     centroid_x = float(sum([pt[0] for pt in pts]))/len(pts)
@@ -59,8 +74,7 @@ def polygonize(pts):
     '''
     centre = centroid(pts)
     polygon = sorted(pts, key=lambda pt: angle(pt, centre))
-    perimeter = sum([dist(p1, p2) for p1, p2 in zip(polygon[:-1], polygon[1:])])
-    return (polygon, perimeter)
+    return polygon
 
 def circles_through_points(p1, p2, r):
     '''Based on http://rosettacode.org/wiki/Circles_of_given_radius_through_two_points#Python'''
@@ -93,8 +107,8 @@ def get_circle(p1, p2, pixels):
             area = math.pi*(dist(p1, p2)/2.)**2
             radius = dist(p1, p2)/2.
         circle1, circle2 = circles_through_points(p1, p2, radius)
-        circle1_pixels = list(map(lambda px: in_circle(px, circle1, radius), pixels)).count(True)
-        circle2_pixels = list(map(lambda px: in_circle(px, circle2, radius), pixels)).count(True)
+        circle1_pixels = count_pixels_in_circle(pixels, circle1, radius)
+        circle2_pixels = count_pixels_in_circle(pixels, circle2, radius)
         contained_pixels = max([circle1_pixels, circle2_pixels])
         if contained_pixels > max_contained_pixels:
             max_contained_pixels = contained_pixels
@@ -144,9 +158,11 @@ class Lattice:
         adj_cells = []
 
         for shift_dir in dirs(neighbour_order):
-            adj_cell = self.matrix[self.shift(pixel, shift_dir)]
-            if (adj_cell != None) and (adj_cell not in adj_cells):
-                adj_cells.append(adj_cell)
+            shifted = self.shift(pixel, shift_dir)
+            if shifted != None:
+                adj_cell = self.matrix[shifted]
+                if adj_cell not in adj_cells:
+                    adj_cells.append(adj_cell)
 
         return list(set(adj_cells))
 
@@ -185,12 +201,12 @@ class Lattice:
                 if boundary:
                     self.data_dict[adj_cell]['boundary_vertices'].append(vertex)
 
-    def polygonize_cells(self):
+    def polygonize_cells(self, arcs=False):
         lines = []
         for cell in self.data_dict.keys():
             vertices = self.data_dict[cell]['vertices']
             boundary_vertices = self.data_dict[cell]['boundary_vertices']
-            polygon = polygonize(vertices)[0]
+            polygon = polygonize(vertices)
             lines.extend(zip(polygon[:-1], polygon[1:]))
             lines.append((polygon[-1], polygon[0]))
             if len(boundary_vertices) == 2:
@@ -202,25 +218,63 @@ class Lattice:
                     lines.remove((boundary_vertices[1], boundary_vertices[0]))
                 except:
                     pass
-                pixels = self.data_dict[cell]['pixels']
-                circle, radius = get_circle(boundary_vertices[0], boundary_vertices[1], pixels)
-                lines.append((boundary_vertices[0], boundary_vertices[1], radius, circle, centroid(vertices)))
+                if arcs:
+                    pixels = self.data_dict[cell]['pixels']
+                    circle, radius = get_circle(boundary_vertices[0], boundary_vertices[1], pixels)
+
+                    # Determine which direction to draw the arc in
+                    theta1, theta2 = arc_through_points(boundary_vertices[0], boundary_vertices[1], circle, centroid(vertices))
+
+                    perimeter = sum([dist(p1, p2) for p1, p2 in zip(polygon[:-1], polygon[1:])]) + dist(polygon[0], polygon[-1]) - dist(boundary_vertices[0], boundary_vertices[1])
+                    perimeter += 2*math.pi*radius*(((theta2 - theta1) % 360)/360.)
+                    self.data_dict[cell]['perimeter'] = perimeter
+
+                    lines.append((theta1, theta2, radius, circle))
+            else:
+                perimeter = sum([dist(p1, p2) for p1, p2 in zip(polygon[:-1], polygon[1:])]) + dist(polygon[0], polygon[-1])
+                self.data_dict[cell]['perimeter'] = perimeter
+        self.lines = set(list(map(tuple, map(sorted, lines))))
         return lines
 
     def plot(self):
-        lines = set(self.polygonize_cells())
         fig = plt.gcf()
-        for line in lines:
+        for line in self.lines:
             if len(line) == 2:
                 plt.plot(list(zip(*line))[0], list(zip(*line))[1], color='black')
-            elif len(line) == 5:
-                boundary_pt1, boundary_pt2 = line[0], line[1]
+            elif len(line) == 4:
+                theta1, theta2 = line[0], line[1]
                 circle_centre = line[3]
                 diameter = 2*line[2]
 
-                # Determine which direction to draw the arc in
-                theta1, theta2 = arc_through_points(boundary_pt1, boundary_pt2, circle_centre, line[4])
                 arc = Arc(circle_centre, width=diameter, height=diameter,
                           theta1=theta1, theta2=theta2, color='black', linewidth=1)
                 fig.gca().add_artist(arc)
         return fig
+
+    def angle_distribution(self):
+        '''
+        See C. Arthur Williams Jr., "On the Choice of the Number and Width of
+        Classes for the Chi-Square Test of Goodness of Fit", 1950 for the
+        formula for number of bins used.
+        '''
+        angles = []
+        for line in self.lines:
+            if len(line) == 2:
+                angles.append(line_angle(line))
+        N = len(angles)
+        k = 4*math.exp(0.2*math.log(2*(N**2)/c**2))
+        freqs = numpy.histogram(angles, bins=k)[0]
+        chisq = sum([(freq - N/k)**2/(N/k) for freq in freqs])
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--file', action='store', dest='file')
+    parser.add_argument('--output', action='store', dest='output')
+    parser.add_argument('--size', action='store', dest='size')
+    results = parser.parse_args()
+    size = tuple(map(int, results.size.split(',')))
+    lattice = Lattice(results.file, size)
+    lattice.get_vertices()
+    lattice.polygonize_cells()
+    name = os.path.splitext(os.path.basename(results.file))[0]
+    lattice.plot().savefig(os.path.join(results.output, name + '.png'))
