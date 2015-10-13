@@ -263,8 +263,15 @@ class Lattice:
                 angles.append(line_angle(line))
         N = len(angles)
         k = 4*math.exp(0.2*math.log(2*(N**2)/c**2))
-        freqs = numpy.histogram(angles, bins=k)[0]
-        chisq = sum([(freq - N/k)**2/(N/k) for freq in freqs])
+        hist, bins = numpy.histogram(angles, bins=k)
+        chisq = sum([(freq - N/k)**2/(N/k) for freq in hist])
+        width = 0.7 * (bins[1] - bins[0])
+        center = (bins[:-1] + bins[1:]) / 2
+        fig = plt.gcf()
+        plt.bar(center, hist, align='center', width=width)
+        plt.xlabel("Angle")
+        plt.ylabel("Frequency")
+        return fig
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -278,3 +285,5 @@ if __name__ == '__main__':
     lattice.polygonize_cells()
     name = os.path.splitext(os.path.basename(results.file))[0]
     lattice.plot().savefig(os.path.join(results.output, name + '.png'))
+    plt.clf()
+    lattice.angle_distribution().savefig(os.path.join(results.output, name + '_angles.png'))
