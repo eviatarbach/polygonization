@@ -5,7 +5,7 @@ import os
 
 import numpy
 from matplotlib import pyplot as plt
-from matplotlib.patches import Arc
+from matplotlib.patches import Arc, Polygon
 import scipy.ndimage
 
 c = 2.3263  # -norminv(0.01)
@@ -132,6 +132,8 @@ class Lattice:
         self.data_dict = dict()
         self.width = size[0]
         self.height = size[1]
+        self.types = []
+        self.colours = []
         self.matrix = numpy.zeros(size, dtype=int)
         self.data = open(data_file).read().split('\n')[1:-1]
         for pix in self.data:
@@ -139,10 +141,20 @@ class Lattice:
             cell = int(fields[0])
             x = int(fields[3])
             y = int(fields[5])
+            cell_type = fields[2]
             self.matrix[x][y] = cell
             if cell not in self.data_dict.keys():
-                self.data_dict[cell] = {'pixels': [], 'vertices': set(), 'boundary_vertices': []}
+                self.data_dict[cell] = {'pixels': [], 'vertices': set(),
+                                        'boundary_vertices': []}
+                if cell_type in self.types:
+                    self.data_dict[cell]['type'] = self.types.index(cell_type)
+                else:
+                    self.types.append(cell_type)
+                    self.data_dict[cell]['type'] = self.types.index(cell_type)
             self.data_dict[cell]['pixels'].append((x, y))
+
+        for cell_type in self.types:
+            self.colours.append(numpy.random.rand(3, 1))
 
         self.dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
@@ -207,6 +219,7 @@ class Lattice:
             vertices = self.data_dict[cell]['vertices']
             boundary_vertices = self.data_dict[cell]['boundary_vertices']
             polygon = polygonize(vertices)
+            self.data_dict[cell]['polygon'] = polygon
             lines.extend(zip(polygon[:-1], polygon[1:]))
             lines.append((polygon[-1], polygon[0]))
             if len(boundary_vertices) == 2:
@@ -241,6 +254,7 @@ class Lattice:
         for line in self.lines:
             if len(line) == 2:
                 plt.plot(list(zip(*line))[0], list(zip(*line))[1], color='black')
+
             elif len(line) == 4:
                 theta1, theta2 = line[0], line[1]
                 circle_centre = line[3]
@@ -249,6 +263,12 @@ class Lattice:
                 arc = Arc(circle_centre, width=diameter, height=diameter,
                           theta1=theta1, theta2=theta2, color='black', linewidth=1)
                 fig.gca().add_artist(arc)
+
+        for cell_dict in self.data_dict.values():
+            polygon = Polygon(cell_dict['polygon'],
+                              color=self.colours[cell_dict['type']])
+            fig.gca().add_artist(polygon)
+
         return fig
 
     def angle_distribution(self):
