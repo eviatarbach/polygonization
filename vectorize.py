@@ -118,13 +118,13 @@ def get_circle(p1, p2, pixels):
 
 def shift_matrix(matrix, shift_dir):
     if shift_dir == 'l':
-        matrix = numpy.hstack([matrix[:, 1:], numpy.zeros([matrix.shape[0], 1])])
+        matrix = numpy.hstack([matrix[:, 1:], -numpy.ones([matrix.shape[0], 1])])
     elif shift_dir == 'r':
-        matrix = numpy.hstack([numpy.zeros([matrix.shape[0], 1]), matrix[:, :-1]])
+        matrix = numpy.hstack([-numpy.ones([matrix.shape[0], 1]), matrix[:, :-1]])
     elif shift_dir == 'u':
-        matrix = numpy.vstack([matrix[1:, :], numpy.zeros([1, matrix.shape[1]])])
+        matrix = numpy.vstack([matrix[1:, :], -numpy.ones([1, matrix.shape[1]])])
     elif shift_dir == 'd':
-        matrix = numpy.vstack([numpy.zeros([1, matrix.shape[1]]), matrix[:-1, :]])
+        matrix = numpy.vstack([-numpy.ones([1, matrix.shape[1]]), matrix[:-1, :]])
     return matrix
 
 class Lattice:
@@ -134,14 +134,14 @@ class Lattice:
         self.height = size[1]
         self.types = []
         self.colours = []
-        self.matrix = numpy.zeros(size, dtype=int)
+        self.matrix = -numpy.ones(size, dtype=int)
         self.data = open(data_file).read().split('\n')[1:-1]
         for pix in self.data:
             fields = pix.split()
             cell = int(fields[0])
-            x = int(fields[3])
-            y = int(fields[5])
-            cell_type = fields[2]
+            x = int(fields[2])
+            y = int(fields[4])
+            cell_type = fields[1]
             self.matrix[x][y] = cell
             if cell not in self.data_dict.keys():
                 self.data_dict[cell] = {'pixels': [], 'vertices': set(),
@@ -181,7 +181,7 @@ class Lattice:
     def get_vertices(self):
         neighbour_count = numpy.zeros((self.height, self.width), dtype=int)
 
-        for cell in [0] + list(self.data_dict.keys()):
+        for cell in [-1] + list(self.data_dict.keys()):
             # The following matrix records how many neighbouring lattice sites
             # belong to the cell `cell`, for each lattice site
             interfaces = ((shift_matrix(self.matrix, 'u') == cell).astype(int) +
@@ -205,9 +205,9 @@ class Lattice:
             cell = self.matrix[vertex]
             adj_cells = self.adjacent_cells(vertex, 1)
 
-            boundary = 0 in adj_cells
+            boundary = -1 in adj_cells
             if boundary:
-                adj_cells.remove(0)
+                adj_cells.remove(-1)
             for adj_cell in adj_cells:
                 self.data_dict[adj_cell]['vertices'].add(vertex)
                 if boundary:
